@@ -1,33 +1,31 @@
 'use client'
 
-import { Habit, DayData, StreamEntry } from '@/lib/types'
+import { PromiseDef, DayData } from '@/lib/types'
 import { exportJSON, exportMarkdown } from '@/lib/export'
 import { useToast } from '@/components/ui/Toast'
 
 interface ExportViewProps {
-  habits: Habit[]
+  promises: PromiseDef[]
   days: Record<string, DayData>
-  stream: StreamEntry[]
-  onEditHabits: () => void
+  onEditPromises: () => void
   onReset: () => void
 }
 
 export default function ExportView({
-  habits,
+  promises,
   days,
-  stream,
-  onEditHabits,
+  onEditPromises,
   onReset,
 }: ExportViewProps) {
   const toast = useToast()
 
   const handleJSON = () => {
-    exportJSON(habits, days, stream)
+    exportJSON(promises, days)
     toast('JSON exported')
   }
 
   const handleMarkdown = () => {
-    exportMarkdown(habits, days, stream)
+    exportMarkdown(promises, days)
     toast('Markdown exported')
   }
 
@@ -38,20 +36,20 @@ export default function ExportView({
           Export your data
         </div>
         <div className="text-xs text-text-2 leading-[1.55] text-left mb-2.5">
-          Download for backup or to chat with an AI about your patterns.
+          Download your promise data for backup.
         </div>
         <div className="flex gap-1.5 mb-1.5">
           <button
             className="flex-1 p-[11px] rounded-lg border-[1.5px] border-border bg-surface-2 text-text-2 text-xs font-semibold cursor-pointer transition-all duration-[120ms] active:border-accent-border active:text-accent active:scale-[0.97]"
             onClick={handleJSON}
           >
-            📋 JSON (AI-ready)
+            JSON (AI-ready)
           </button>
           <button
             className="flex-1 p-[11px] rounded-lg border-[1.5px] border-border bg-surface-2 text-text-2 text-xs font-semibold cursor-pointer transition-all duration-[120ms] active:border-accent-border active:text-accent active:scale-[0.97]"
             onClick={handleMarkdown}
           >
-            📝 Markdown
+            Markdown
           </button>
         </div>
       </div>
@@ -62,15 +60,15 @@ export default function ExportView({
         <div className="flex gap-1.5 mb-1.5">
           <button
             className="flex-1 p-[11px] rounded-lg border-[1.5px] border-border bg-surface-2 text-text-2 text-xs font-semibold cursor-pointer transition-all duration-[120ms] active:border-accent-border active:text-accent active:scale-[0.97]"
-            onClick={onEditHabits}
+            onClick={onEditPromises}
           >
-            ✏️ Edit habits
+            Edit promises
           </button>
           <button
             className="flex-1 p-[11px] rounded-lg border-[1.5px] border-border bg-surface-2 text-text-2 text-xs font-semibold cursor-pointer transition-all duration-[120ms] active:border-accent-border active:text-accent active:scale-[0.97]"
             onClick={onReset}
           >
-            🗑 Reset data
+            Reset data
           </button>
         </div>
       </div>

@@ -1,26 +1,6 @@
-import { Habit, DayData, StreamEntry } from './types'
-import { formatDate, formatTime } from './dates'
-
-function buildExportData(
-  habits: Habit[],
-  days: Record<string, DayData>,
-  stream: StreamEntry[]
-) {
-  const dates = [
-    ...new Set([...Object.keys(days), ...stream.map((x) => x.date)]),
-  ].sort()
-  const n = dates.length
-  const energies = dates.map((d) => days[d]?.energy).filter(Boolean) as number[]
-  const avg = energies.length
-    ? (energies.reduce((a, b) => a + b, 0) / energies.length).toFixed(1)
-    : '0'
-  const rates: Record<string, string> = {}
-  habits.forEach((h) => {
-    const done = dates.filter((d) => days[d]?.habits?.[h.id]).length
-    rates[h.label] = n ? Math.round((done / n) * 100) + '%' : '0%'
-  })
-  return { n, avg, rates, habits, days, stream, dates }
-}
+import { PromiseDef, DayData, StreamEntry } from './types'
+import { formatDate } from './dates'
+import { computePromiseStats, getLongestOverallStreak } from './analytics'
 
 function download(name: string, content: string, type: string) {
   const a = document.createElement('a')
@@ -30,68 +10,92 @@ function download(name: string, content: string, type: string) {
   URL.revokeObjectURL(a.href)
 }
 
+function getLegacyStream(): StreamEntry[] {
+  try {
+    const raw = localStorage.getItem('g_stream')
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
 export function exportJSON(
-  habits: Habit[],
-  days: Record<string, DayData>,
-  stream: StreamEntry[]
+  promises: PromiseDef[],
+  days: Record<string, DayData>
 ) {
-  const x = buildExportData(habits, days, stream)
-  const o = {
+  const dates = Object.keys(days).sort()
+  const stats = computePromiseStats(promises, days)
+  const longestStreak = getLongestOverallStreak(days)
+  const legacyStream = getLegacyStream()
+
+  const o: Record<string, unknown> = {
     exported: new Date().toISOString(),
     summary: {
-      total_days: x.n,
-      avg_energy: x.avg,
-      habit_completion: x.rates,
-      total_entries: x.stream.length,
+      total_days: dates.length,
+      longest_streak: longestStreak,
+      promise_stats: stats.map((s) => ({
+        promise: s.label,
+        rate: Math.round(s.rate * 100) + '%',
+        kept: s.kept,
+        total: s.total,
+        current_streak: s.currentStreak,
+        longest_streak: s.longestStreak,
+      })),
     },
-    habits_tracked: x.habits.map((h) => h.label),
-    days: x.dates.map((d) => ({
+    promises_tracked: promises.map((p) => p.label),
+    days: dates.map((d) => ({
       date: d,
-      energy: x.days[d]?.energy || null,
-      habits: x.habits.reduce(
-        (a, h) => {
-          a[h.label] = x.days[d]?.habits?.[h.id] || false
+      intention: days[d]?.intention || null,
+      promises: promises.reduce(
+        (a, p) => {
+          a[p.label] = days[d]?.promises?.[p.id] || false
           return a
         },
         {} as Record<string, boolean>
       ),
-      entries: x.stream
-        .filter((e) => e.date === d)
-        .sort((a, b) => a.ts - b.ts)
-        .map((e) => ({ time: e.time, text: e.text, source: e.src })),
     })),
   }
+
+  if (legacyStream.length > 0) {
+    o.legacy_entries = legacyStream.map((e) => ({
+      date: e.date,
+      time: e.time,
+      text: e.text,
+      kind: e.kind,
+    }))
+  }
+
   download('ground-export.json', JSON.stringify(o, null, 2), 'application/json')
 }
 
 export function exportMarkdown(
-  habits: Habit[],
-  days: Record<string, DayData>,
-  stream: StreamEntry[]
+  promises: PromiseDef[],
+  days: Record<string, DayData>
 ) {
-  const x = buildExportData(habits, days, stream)
-  let md = `# Ground Journal Export\n\n**Days:** ${x.n} | **Avg energy:** ${x.avg} | **Entries:** ${x.stream.length}\n\n`
-  md += `## Habit Completion\n${Object.entries(x.rates)
-    .map(([k, v]) => `- ${k}: ${v}`)
-    .join('\n')}\n\n---\n\n`
-  ;[...x.dates].reverse().forEach((date) => {
-    const d = x.days[date] || ({} as DayData)
+  const dates = Object.keys(days).sort()
+  const stats = computePromiseStats(promises, days)
+  const longestStreak = getLongestOverallStreak(days)
+
+  let md = `# Ground Export\n\n**Days:** ${dates.length} | **Longest streak:** ${longestStreak}\n\n`
+  md += `## Promise Stats\n`
+  for (const s of stats) {
+    md += `- ${s.label}: ${Math.round(s.rate * 100)}% (${s.kept}/${s.total}) — streak: ${s.currentStreak}, best: ${s.longestStreak}\n`
+  }
+  md += `\n---\n\n`
+
+  ;[...dates].reverse().forEach((date) => {
+    const d = days[date]
+    if (!d) return
     md += `## ${formatDate(date)} (${date})\n`
-    if (d.energy)
-      md += `Energy: ${'●'.repeat(d.energy)}${'○'.repeat(5 - d.energy)} (${d.energy}/5)\n`
-    const done = x.habits.filter((h) => d.habits?.[h.id])
-    const missed = x.habits.filter((h) => d.habits?.[h.id] === false)
-    if (done.length)
-      md += `Done: ${done.map((h) => h.label).join(', ')}\n`
-    if (missed.length)
-      md += `Missed: ${missed.map((h) => h.label).join(', ')}\n`
-    x.stream
-      .filter((e) => e.date === date)
-      .sort((a, b) => a.ts - b.ts)
-      .forEach((e) => {
-        md += `- ${formatTime(e.ts)} ${e.src === 'voice' ? '🎤 ' : ''}${e.text}\n`
-      })
+    if (d.intention) md += `> ${d.intention}\n\n`
+    const kept = promises.filter((p) => d.promises?.[p.id])
+    const missed = promises.filter(
+      (p) => d.promises?.[p.id] === false
+    )
+    if (kept.length) md += `Kept: ${kept.map((p) => p.label).join(', ')}\n`
+    if (missed.length) md += `Missed: ${missed.map((p) => p.label).join(', ')}\n`
     md += '\n'
   })
+
   download('ground-export.md', md, 'text/markdown')
 }

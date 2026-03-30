@@ -1,6 +1,6 @@
 'use client'
 
-export type TabId = 'today' | 'history' | 'export'
+export type TabId = 'today' | 'mirror' | 'export'
 
 interface TabsProps {
   active: TabId
@@ -9,7 +9,7 @@ interface TabsProps {
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'today', label: 'Today' },
-  { id: 'history', label: 'History' },
+  { id: 'mirror', label: 'Mirror' },
   { id: 'export', label: 'Export' },
 ]
 

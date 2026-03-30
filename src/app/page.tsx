@@ -1,111 +1,94 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import { Habit, DayData, StreamEntry } from '@/lib/types'
-import { PRESET_HABITS } from '@/lib/constants'
+import { PromiseDef, DayData } from '@/lib/types'
+import { CORE_PROMISES } from '@/lib/constants'
+import { migrateIfNeeded } from '@/lib/migration'
 import { todayStr } from '@/lib/dates'
 import { useStorage } from '@/hooks/useStorage'
-import { useStreak } from '@/hooks/useStreak'
+import { useDayCount } from '@/hooks/useDayCount'
 import { ToastProvider } from '@/components/ui/Toast'
 import WelcomeStep from '@/components/onboarding/WelcomeStep'
-import HabitPicker from '@/components/onboarding/HabitPicker'
+import PromisePicker from '@/components/onboarding/PromisePicker'
 import Header from '@/components/shell/Header'
 import Tabs, { TabId } from '@/components/shell/Tabs'
-import HabitsCard from '@/components/today/HabitsCard'
-import EnergyCard from '@/components/today/EnergyCard'
-import StreamCard from '@/components/today/StreamCard'
-import HistoryView from '@/components/history/HistoryView'
+import TodayView from '@/components/today/TodayView'
+import MirrorView from '@/components/mirror/MirrorView'
 import ExportView from '@/components/export/ExportView'
 
-type AppView = 'welcome' | 'pick-habits' | 'app' | 'edit-habits'
+if (typeof window !== 'undefined') migrateIfNeeded()
+
+type AppView = 'welcome' | 'pick-promises' | 'app' | 'edit-promises'
 
 function GroundApp() {
-  const [habits, setHabits, habitsLoaded] = useStorage<Habit[] | null>('g_habits', null)
+  const [promises, setPromises, promisesLoaded] = useStorage<PromiseDef[] | null>('g_promises', null)
   const [days, setDays] = useStorage<Record<string, DayData>>('g_days', {})
-  const [stream, setStream] = useStorage<StreamEntry[]>('g_stream', [])
   const [activeTab, setActiveTab] = useState<TabId>('today')
 
   const [view, setView] = useState<AppView>('welcome')
 
-  const effectiveView = !habitsLoaded
+  const effectiveView = !promisesLoaded
     ? null
-    : habits
-      ? view === 'edit-habits'
-        ? 'edit-habits'
+    : promises
+      ? view === 'edit-promises'
+        ? 'edit-promises'
         : 'app'
-      : view === 'pick-habits'
-        ? 'pick-habits'
+      : view === 'pick-promises'
+        ? 'pick-promises'
         : 'welcome'
 
-  const streak = useStreak(days, stream)
+  const dayCount = useDayCount(days)
 
   const today = todayStr()
-  const dayData: DayData = days[today] || { energy: 0, habits: {}, at: 0 }
+  const dayData: DayData = days[today] || { promises: {}, at: 0 }
+
+  // Tomorrow's date for the intention bridge
+  const tomorrowDate = new Date()
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1)
+  const tomorrowStr = tomorrowDate.toISOString().slice(0, 10)
+  const tomorrowData: DayData = days[tomorrowStr] || { promises: {}, at: 0 }
 
   const putDay = useCallback(
-    (updates: Partial<DayData>) => {
+    (date: string, updates: Partial<DayData>) => {
       setDays((prev) => ({
         ...prev,
-        [today]: { ...prev[today], ...updates, at: Date.now() },
+        [date]: { ...prev[date], ...updates, at: Date.now() },
       }))
     },
-    [today, setDays]
+    [setDays]
   )
 
-  const toggleHabit = useCallback(
+  const togglePromise = useCallback(
     (id: string) => {
-      const current = dayData.habits?.[id] || false
-      putDay({ habits: { ...dayData.habits, [id]: !current }, energy: dayData.energy })
+      const current = dayData.promises?.[id] || false
+      putDay(today, { promises: { ...dayData.promises, [id]: !current } })
     },
-    [dayData, putDay]
+    [dayData, putDay, today]
   )
 
-  const setEnergy = useCallback(
-    (n: number) => {
-      putDay({ energy: n, habits: dayData.habits })
+  const setTomorrowIntention = useCallback(
+    (text: string) => {
+      putDay(tomorrowStr, { intention: text })
     },
-    [dayData.habits, putDay]
+    [putDay, tomorrowStr]
   )
 
-  const addEntry = useCallback(
-    (text: string, src: 'kb' | 'voice') => {
-      const now = new Date()
-      const entry: StreamEntry = {
-        id: 'e_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
-        date: today,
-        time: now.toTimeString().slice(0, 5),
-        ts: now.getTime(),
-        text,
-        src,
-      }
-      setStream((prev) => [...prev, entry])
-    },
-    [today, setStream]
-  )
-
-  const deleteEntry = useCallback(
-    (id: string) => {
-      setStream((prev) => prev.filter((x) => x.id !== id))
-    },
-    [setStream]
-  )
-
-  const handleHabitsDone = useCallback(
-    (newHabits: Habit[]) => {
-      setHabits(newHabits)
+  const handlePromisesDone = useCallback(
+    (newPromises: PromiseDef[]) => {
+      setPromises(newPromises)
       setView('app')
     },
-    [setHabits]
+    [setPromises]
   )
 
-  const handleEditHabits = useCallback(() => {
-    setView('edit-habits')
+  const handleEditPromises = useCallback(() => {
+    setView('edit-promises')
   }, [])
 
   const handleReset = useCallback(() => {
     if (!confirm('Delete ALL data? Cannot be undone.')) return
     if (!confirm('Really sure?')) return
-    ;['g_days', 'g_stream', 'g_habits', 'g_weekly', 'g_one_bet'].forEach((k) =>
+    ;['g_days', 'g_stream', 'g_promises', 'g_version', 'g_evening_hour'].forEach((k) =>
       localStorage.removeItem(k)
     )
     window.location.reload()
@@ -116,64 +99,65 @@ function GroundApp() {
   if (effectiveView === 'welcome') {
     return (
       <div className="fixed inset-0 bg-bg z-[100] flex flex-col items-center justify-center p-6">
-        <WelcomeStep onNext={() => setView('pick-habits')} />
+        <WelcomeStep onNext={() => setView('pick-promises')} />
       </div>
     )
   }
 
-  if (effectiveView === 'pick-habits') {
+  if (effectiveView === 'pick-promises') {
     return (
       <div className="fixed inset-0 bg-bg z-[100] flex flex-col items-center justify-center p-6">
-        <HabitPicker onDone={handleHabitsDone} />
+        <PromisePicker onDone={handlePromisesDone} />
       </div>
     )
   }
 
-  if (effectiveView === 'edit-habits') {
-    const currentHabits = habits || []
-    const currentSelected = new Set(currentHabits.map((h) => h.id))
-    const currentExtra = currentHabits.filter(
-      (h) => !PRESET_HABITS.find((p) => p.id === h.id)
+  if (effectiveView === 'edit-promises') {
+    const currentPromises = promises || []
+    const currentSelected = new Set(currentPromises.map((p) => p.id))
+    const currentExtra = currentPromises.filter(
+      (p) => !CORE_PROMISES.find((c) => c.id === p.id)
     )
     return (
       <div className="fixed inset-0 bg-bg z-[100] flex flex-col items-center justify-center p-6">
-        <HabitPicker
+        <PromisePicker
           initialSelected={currentSelected}
           initialExtra={currentExtra}
           isEditing
-          onDone={handleHabitsDone}
+          onDone={handlePromisesDone}
         />
       </div>
     )
   }
 
   return (
-    <div className="max-w-[460px] mx-auto px-4 pb-[120px]">
-      <Header streak={streak} />
+    <div className={`mx-auto px-4 pb-[120px] ${activeTab === 'mirror' ? 'max-w-[540px] lg:max-w-[720px]' : 'max-w-[540px]'}`}>
+      <Header dayCount={dayCount} />
       <Tabs active={activeTab} onChange={setActiveTab} />
 
       {activeTab === 'today' && (
-        <>
-          <HabitsCard
-            habits={habits || []}
-            dayData={dayData}
-            onToggle={toggleHabit}
-          />
-          <EnergyCard energy={dayData.energy} onSet={setEnergy} />
-          <StreamCard stream={stream} onAdd={addEntry} onDelete={deleteEntry} />
-        </>
+        <TodayView
+          promises={promises || []}
+          dayData={dayData}
+          tomorrowData={tomorrowData}
+          onToggle={togglePromise}
+          onSetTomorrowIntention={setTomorrowIntention}
+        />
       )}
 
-      {activeTab === 'history' && (
-        <HistoryView habits={habits || []} days={days} stream={stream} />
+      {activeTab === 'mirror' && (
+        <MirrorView
+          promises={promises || []}
+          days={days}
+          dayCount={dayCount}
+        />
       )}
 
       {activeTab === 'export' && (
         <ExportView
-          habits={habits || []}
+          promises={promises || []}
           days={days}
-          stream={stream}
-          onEditHabits={handleEditHabits}
+          onEditPromises={handleEditPromises}
           onReset={handleReset}
         />
       )}

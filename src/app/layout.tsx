@@ -10,7 +10,7 @@ const dmSans = DM_Sans({
 
 export const metadata: Metadata = {
   title: 'Ground',
-  description: 'Track habits, energy and thoughts. One stream, every day.',
+  description: 'Six promises. One mirror. Every day.',
 }
 
 export default function RootLayout({
