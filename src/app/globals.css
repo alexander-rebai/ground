@@ -1,26 +1,39 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  --color-bg: #101010;
+  --color-surface: #181818;
+  --color-surface-2: #222222;
+  --color-border: #2a2a2a;
+  --color-text: #e5e0da;
+  --color-text-2: #807a73;
+  --color-text-3: #4a4540;
+  --color-accent: #cb8f5d;
+  --color-accent-dim: rgba(203, 143, 93, 0.08);
+  --color-accent-border: rgba(203, 143, 93, 0.25);
+  --color-done: #5f9968;
+  --color-done-dim: rgba(95, 153, 104, 0.1);
+  --color-done-border: rgba(95, 153, 104, 0.3);
+  --color-red: #c46b63;
+  --color-red-dim: rgba(196, 107, 99, 0.1);
+  --radius-pill: 50px;
+  --animate-pulse-rec: pulse-rec 0.9s infinite;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  *,
+  *::before,
+  *::after {
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@keyframes pulse-rec {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(196, 107, 99, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(196, 107, 99, 0);
+  }
 }

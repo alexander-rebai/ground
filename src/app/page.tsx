@@ -1,65 +1,190 @@
-import Image from "next/image";
+'use client'
+
+import { useState, useCallback } from 'react'
+import { Habit, DayData, StreamEntry } from '@/lib/types'
+import { PRESET_HABITS } from '@/lib/constants'
+import { todayStr } from '@/lib/dates'
+import { useStorage } from '@/hooks/useStorage'
+import { useStreak } from '@/hooks/useStreak'
+import { ToastProvider } from '@/components/ui/Toast'
+import WelcomeStep from '@/components/onboarding/WelcomeStep'
+import HabitPicker from '@/components/onboarding/HabitPicker'
+import Header from '@/components/shell/Header'
+import Tabs, { TabId } from '@/components/shell/Tabs'
+import HabitsCard from '@/components/today/HabitsCard'
+import EnergyCard from '@/components/today/EnergyCard'
+import StreamCard from '@/components/today/StreamCard'
+import HistoryView from '@/components/history/HistoryView'
+import ExportView from '@/components/export/ExportView'
+
+type AppView = 'welcome' | 'pick-habits' | 'app' | 'edit-habits'
+
+function GroundApp() {
+  const [habits, setHabits, habitsLoaded] = useStorage<Habit[] | null>('g_habits', null)
+  const [days, setDays] = useStorage<Record<string, DayData>>('g_days', {})
+  const [stream, setStream] = useStorage<StreamEntry[]>('g_stream', [])
+  const [activeTab, setActiveTab] = useState<TabId>('today')
+
+  const [view, setView] = useState<AppView>('welcome')
+
+  const effectiveView = !habitsLoaded
+    ? null
+    : habits
+      ? view === 'edit-habits'
+        ? 'edit-habits'
+        : 'app'
+      : view === 'pick-habits'
+        ? 'pick-habits'
+        : 'welcome'
+
+  const streak = useStreak(days, stream)
+
+  const today = todayStr()
+  const dayData: DayData = days[today] || { energy: 0, habits: {}, at: 0 }
+
+  const putDay = useCallback(
+    (updates: Partial<DayData>) => {
+      setDays((prev) => ({
+        ...prev,
+        [today]: { ...prev[today], ...updates, at: Date.now() },
+      }))
+    },
+    [today, setDays]
+  )
+
+  const toggleHabit = useCallback(
+    (id: string) => {
+      const current = dayData.habits?.[id] || false
+      putDay({ habits: { ...dayData.habits, [id]: !current }, energy: dayData.energy })
+    },
+    [dayData, putDay]
+  )
+
+  const setEnergy = useCallback(
+    (n: number) => {
+      putDay({ energy: n, habits: dayData.habits })
+    },
+    [dayData.habits, putDay]
+  )
+
+  const addEntry = useCallback(
+    (text: string, src: 'kb' | 'voice') => {
+      const now = new Date()
+      const entry: StreamEntry = {
+        id: 'e_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+        date: today,
+        time: now.toTimeString().slice(0, 5),
+        ts: now.getTime(),
+        text,
+        src,
+      }
+      setStream((prev) => [...prev, entry])
+    },
+    [today, setStream]
+  )
+
+  const deleteEntry = useCallback(
+    (id: string) => {
+      setStream((prev) => prev.filter((x) => x.id !== id))
+    },
+    [setStream]
+  )
+
+  const handleHabitsDone = useCallback(
+    (newHabits: Habit[]) => {
+      setHabits(newHabits)
+      setView('app')
+    },
+    [setHabits]
+  )
+
+  const handleEditHabits = useCallback(() => {
+    setView('edit-habits')
+  }, [])
+
+  const handleReset = useCallback(() => {
+    if (!confirm('Delete ALL data? Cannot be undone.')) return
+    if (!confirm('Really sure?')) return
+    ;['g_days', 'g_stream', 'g_habits', 'g_weekly', 'g_one_bet'].forEach((k) =>
+      localStorage.removeItem(k)
+    )
+    window.location.reload()
+  }, [])
+
+  if (effectiveView === null) return null
+
+  if (effectiveView === 'welcome') {
+    return (
+      <div className="fixed inset-0 bg-bg z-[100] flex flex-col items-center justify-center p-6">
+        <WelcomeStep onNext={() => setView('pick-habits')} />
+      </div>
+    )
+  }
+
+  if (effectiveView === 'pick-habits') {
+    return (
+      <div className="fixed inset-0 bg-bg z-[100] flex flex-col items-center justify-center p-6">
+        <HabitPicker onDone={handleHabitsDone} />
+      </div>
+    )
+  }
+
+  if (effectiveView === 'edit-habits') {
+    const currentHabits = habits || []
+    const currentSelected = new Set(currentHabits.map((h) => h.id))
+    const currentExtra = currentHabits.filter(
+      (h) => !PRESET_HABITS.find((p) => p.id === h.id)
+    )
+    return (
+      <div className="fixed inset-0 bg-bg z-[100] flex flex-col items-center justify-center p-6">
+        <HabitPicker
+          initialSelected={currentSelected}
+          initialExtra={currentExtra}
+          isEditing
+          onDone={handleHabitsDone}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-[460px] mx-auto px-4 pb-[120px]">
+      <Header streak={streak} />
+      <Tabs active={activeTab} onChange={setActiveTab} />
+
+      {activeTab === 'today' && (
+        <>
+          <HabitsCard
+            habits={habits || []}
+            dayData={dayData}
+            onToggle={toggleHabit}
+          />
+          <EnergyCard energy={dayData.energy} onSet={setEnergy} />
+          <StreamCard stream={stream} onAdd={addEntry} onDelete={deleteEntry} />
+        </>
+      )}
+
+      {activeTab === 'history' && (
+        <HistoryView habits={habits || []} days={days} stream={stream} />
+      )}
+
+      {activeTab === 'export' && (
+        <ExportView
+          habits={habits || []}
+          days={days}
+          stream={stream}
+          onEditHabits={handleEditHabits}
+          onReset={handleReset}
+        />
+      )}
+    </div>
+  )
+}
 
 export default function Home() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
-  );
+    <ToastProvider>
+      <GroundApp />
+    </ToastProvider>
+  )
 }
